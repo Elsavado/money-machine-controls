@@ -418,7 +418,7 @@ const KPICard: React.FC<{ metric: KPIMetric }> = ({ metric }) => {
             <div
               key={i}
               className="flex-1 bg-blue-200 rounded-t"
-              style={{ height: `${(value / Math.max(...metric.chart!)) * 100)}%` }}
+              style={{ height: `${(value / Math.max(...metric.chart!)) * 100}%` }}
             />
           ))}
         </div>
