@@ -680,7 +680,7 @@ export default function CorporatePaymentDashboard() {
             <AlertCircle size={12} style={{ marginRight: '4px', display: 'inline-block' }} />
             Pending Queue Exceptions
           </div>
-          <div style={metricValueStyle} style={{ color: pendingQueueExceptions > 0 ? COLORS.accentAmber : COLORS.textPrimary }}>
+          <div style={{ ...metricValueStyle, color: pendingQueueExceptions > 0 ? COLORS.accentAmber : COLORS.textPrimary }}>
             {pendingQueueExceptions}
           </div>
           <div style={{ fontSize: '11px', color: COLORS.textSecondary }}>requiring attention</div>
