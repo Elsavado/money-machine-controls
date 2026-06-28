@@ -1,0 +1,5 @@
+InvoiceID,ContractorID,ContractorName,ContractorEmail,Amount,Timestamp,ProcessingStatus
+"INV-2026-001","c_01","Alex Analyst","alex@irtranscripts.com",450,"2026-06-28T10:36:22.837Z","PROCESSED_AUTOMATICALLY"
+"INV-2026-002","c_02","Grace Agent","grace@irtranscripts.com",100,"2026-06-28T10:36:23.078Z","PROCESSED_AUTOMATICALLY"
+"INV-2026-003","c_02","Grace Agent","grace@irtranscripts.com",100,"2026-06-28T10:36:23.078Z","PROCESSED_AUTOMATICALLY"
+"INV-2026-004","c_02","Grace Agent","grace@irtranscripts.com",100,"2026-06-28T10:36:23.079Z","PROCESSED_AUTOMATICALLY"
