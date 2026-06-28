@@ -381,7 +381,8 @@ const demoApprovalQueue: ApprovalItem[] = [
     readyToPay: false,
   },
 ];
-// ============================================================================
+
+ // ============================================================================
 // COMPONENT: KPI CARD
 // ============================================================================
 
@@ -398,8 +399,19 @@ const KPICard: React.FC<{ metric: KPIMetric }> = ({ metric }) => {
             {metric.unit && <span className="text-sm text-slate-500"> {metric.unit}</span>}
           </p>
         </div>
+        <div className="text-slate-400">{metric.icon}</div>
+      </div>
+      <div className="flex items-center gap-2">
+        {metric.isPositive ? (
+          <span className="text-xs text-emerald-600 font-semibold">▲ {metric.change}</span>
+        ) : (
+          <span className="text-xs text-rose-600 font-semibold">▼ {metric.change}</span>
+        )}
+        {metric.subtext && <span className="text-xs text-slate-400">{metric.subtext}</span>}
       </div>
     </div>
+  );
+};
   );
 };
         <div className="text-slate-400">{metric.icon}</div>
