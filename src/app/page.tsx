@@ -409,11 +409,7 @@ const KPICard: React.FC<{ metric: KPIMetric }> = ({ metric }) => {
         )}
         {metric.subtext && <span className="text-xs text-slate-400">{metric.subtext}</span>}
       </div>
-    </div>
-  );
-};
-  );
-};
+    
         <div className="text-slate-400">{metric.icon}</div>
       </div>
       <div className="flex items-center gap-2">
