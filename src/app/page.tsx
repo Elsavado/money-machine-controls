@@ -1,173 +1,840 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Play, ShieldAlert, CheckCircle, AlertTriangle, FileSpreadsheet, Radio, DollarSign, Layers } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Shield,
+  Cpu,
+  Terminal,
+  Sliders,
+  RefreshCw,
+  FileSpreadsheet,
+  Lock,
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  TrendingUp,
+  Database,
+  Zap,
+  BarChart3,
+  Clock,
+  Users,
+  DollarSign,
+} from 'lucide-react';
 
-export default function OperationalDashboard() {
-  const [systemMode, setSystemMode] = useState<'AUTOPILOT' | 'MANUAL_MODE'>('AUTOPILOT');
-  const [logs, setLogs] = useState<string[]>([
-    '[INIT 13:49:00] Master operational engine parameters mounted successfully.',
-    '[AUDIT 13:49:02] Core system validation checks completed: IDEMPOTENCY check active.',
-    '[AUDIT 13:49:05] Rate-limiting tokens instantiated. Batch financial limits pinned to hard threshold of $2,500.00.'
-  ]);
-  const [totalSpent, setTotalSpent] = useState<number>(450);
-  const [invoiceCount, setInvoiceCount] = useState<number>(1);
-  const [processedIds] = useState<Set<string>>(new Set(['INV-2026-001']));
+// ==============================================================================
+// CORE DATA TYPES & CONSTANTS
+// ==============================================================================
 
-  const addLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs((prev) => [`[SYSTEM ${timestamp}] ${message}`, ...prev]);
+type ExecutionMode = 'AUTOPILOT_SETTLEMENT' | 'MANUAL_INTERCEPT_GATE';
+type UserRole = 'Operations Director' | 'Chief Financial Officer (CFO)' | 'FinOps Lead' | 'Global HR Administrator';
+type TransactionStatus = 'CLEARED' | 'PENDING_EXCEPTION' | 'SECURITY_BLOCK' | 'IDEMPOTENCY_FAILED' | 'LIQUIDITY_CEILING_BREACH';
+
+interface Transaction {
+  id: string;
+  recipientId: string;
+  routingAccount: string;
+  baseRate: number;
+  verificationHash: string;
+  status: TransactionStatus;
+  timestamp: string;
+}
+
+interface LogEntry {
+  timestamp: string;
+  level: 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS';
+  component: string;
+  message: string;
+}
+
+// ==============================================================================
+// MAIN DASHBOARD COMPONENT
+// ==============================================================================
+
+export default function CorporatePaymentDashboard() {
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE MANAGEMENT
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('AUTOPILOT_SETTLEMENT');
+  const [userRole, setUserRole] = useState<UserRole>('Operations Director');
+  const [distributedCycleFunds, setDistributedCycleFunds] = useState(0);
+  const [settledLedgerEntries, setSettledLedgerEntries] = useState(0);
+  const [pendingQueueExceptions, setPendingQueueExceptions] = useState(0);
+  const [gatewayAvailability, setGatewayAvailability] = useState(100);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AUTHORIZATION MATRIX BY ROLE
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const rolePermissions = {
+    'Operations Director': { canToggleMode: true, canInjectPayloads: true, canExport: true },
+    'Chief Financial Officer (CFO)': { canToggleMode: true, canInjectPayloads: false, canExport: true },
+    'FinOps Lead': { canToggleMode: false, canInjectPayloads: true, canExport: true },
+    'Global HR Administrator': { canToggleMode: false, canInjectPayloads: false, canExport: false },
   };
 
-  const processInvoice = (id: string, contractor: string, email: string, amount: number) => {
-    addLog(`START: Initiating lifecycle telemetry boundary evaluation for Invoice: ${id}...`);
+  const permissions = rolePermissions[userRole];
 
-    // 1. Idempotency Check
-    if (processedIds.has(id)) {
-      addLog(`🚨 TELEMETRY CRITICAL EXCEPTION: DUPLICATE_INVOICE_REJECTED | Attempted re-submission of processed invoice hash: ${id}. Contractor: ${contractor} (${email}). Pushed trace packet to alert streams.`);
-      return;
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // TELEMETRY LOG STREAM
+  // ─────────────────────────────────────────────────────────────────────────
 
-    // 2. Budget Gate Check
-    if (totalSpent + amount > 2500) {
-      addLog(`🚨 TELEMETRY CRITICAL EXCEPTION: BUDGET_CAP_EXCEEDED | Inbound amount ($${amount}) pushes totals past authorized batch limit ($2,500.00). Contractor: ${contractor} (${email}). Execution hard-blocked.`);
-      return;
-    }
-
-    // 3. Operational State Check (Autopilot vs Manual Interception)
-    if (systemMode === 'MANUAL_MODE') {
-      addLog(`⚠️ INTERCEPT: Cockpit configured to MANUAL_MODE. Invoice ID ${id} ($${amount}) frozen in staging pipeline. Diverted execution path to senior supervisor approval queue.`);
-      return;
-    }
-
-    // Standard Ingestion Path (Autopilot Clear)
-    processedIds.add(id);
-    setTotalSpent((prev) => prev + amount);
-    setInvoiceCount((prev) => prev + 1);
-    addLog(`🚀 SUCCESS: Autopilot cleared execution parameters for Invoice ${id}. Distributed $${amount}.00 to ${contractor}. Transaction ledger committed.`);
+  const appendLog = (level: LogEntry['level'], component: string, message: string) => {
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString().split('T')[1].slice(0, 12),
+      level,
+      component,
+      message,
+    };
+    setLogs((prev) => [...prev, entry].slice(-100));
   };
+
+  // Auto-scroll terminal to latest log
+  useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAYMENT ENGINE ORCHESTRATION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const ingestCorporateSettlement = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    appendLog('INFO', 'SETTLEMENT_ROUTER', 'Ingesting corporate settlement request...');
+
+    const settlementAmount = 1250;
+    const projectedTotal = distributedCycleFunds + settlementAmount;
+
+    if (projectedTotal > 25000) {
+      appendLog(
+        'ERROR',
+        'LIQUIDITY_CEILING_BREACH_FAILED',
+        `Settlement rejected: ${settlementAmount} would exceed hard cap. Current: ${distributedCycleFunds}, Cap: 25000`
+      );
+      setPendingQueueExceptions((prev) => prev + 1);
+      setIsProcessing(false);
+      return;
+    }
+
+    if (executionMode === 'MANUAL_INTERCEPT_GATE') {
+      appendLog('WARN', 'MANUAL_GATE_LOCK', 'Settlement payload frozen: system in MANUAL_INTERCEPT_GATE. Requires override.');
+      setPendingQueueExceptions((prev) => prev + 1);
+      setIsProcessing(false);
+      return;
+    }
+
+    // Process settlement
+    const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const newTxn: Transaction = {
+      id: txnId,
+      recipientId: `CONTRACTOR_${Math.floor(Math.random() * 5000)}`,
+      routingAccount: `AC-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`,
+      baseRate: settlementAmount,
+      verificationHash: `SHA256:${Math.random().toString(36).substring(2, 15)}`,
+      status: 'CLEARED',
+      timestamp: new Date().toISOString().split('T')[1].slice(0, 12),
+    };
+
+    setDistributedCycleFunds(projectedTotal);
+    setSettledLedgerEntries((prev) => prev + 1);
+    setTransactions((prev) => [newTxn, ...prev].slice(0, 50));
+
+    appendLog('SUCCESS', 'LEDGER_BLOCK_SETTLED', `TXN ${txnId} cleared. Cycle funds: $${projectedTotal}`);
+    setGatewayAvailability((prev) => Math.max(85, prev - 2));
+
+    setTimeout(() => {
+      setGatewayAvailability((prev) => Math.min(100, prev + 3));
+      setIsProcessing(false);
+    }, 1500);
+  };
+
+  const injectTokenDuplication = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    appendLog('INFO', 'IDEMPOTENCY_VALIDATOR', 'Injecting duplicate token conflict...');
+
+    const duplicateTxnId = `TXN-${Date.now()}-DUP-${Math.random().toString(36).substring(7)}`;
+
+    const failedTxn: Transaction = {
+      id: duplicateTxnId,
+      recipientId: `CONTRACTOR_${Math.floor(Math.random() * 5000)}`,
+      routingAccount: `AC-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`,
+      baseRate: 0,
+      verificationHash: `SHA256:DUPLICATE_SIG_${Math.random().toString(36).substring(2, 15)}`,
+      status: 'IDEMPOTENCY_FAILED',
+      timestamp: new Date().toISOString().split('T')[1].slice(0, 12),
+    };
+
+    setTransactions((prev) => [failedTxn, ...prev].slice(0, 50));
+    setPendingQueueExceptions((prev) => prev + 1);
+
+    appendLog(
+      'ERROR',
+      'IDEMPOTENCY_CHECK_FAILED',
+      `TXN ${duplicateTxnId} rejected: matching transaction signature detected in ledger. Resubmission blocked.`
+    );
+    setGatewayAvailability((prev) => Math.max(75, prev - 8));
+
+    setTimeout(() => {
+      setGatewayAvailability((prev) => Math.min(100, prev + 2));
+      setIsProcessing(false);
+    }, 1200);
+  };
+
+  const deployCapitalThresholdBreach = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    appendLog('INFO', 'LIQUIDITY_CEILING_ENFORCER', 'Deploying capital threshold over-breach scenario...');
+
+    const breachAmount = 8500;
+    const projectedTotal = distributedCycleFunds + breachAmount;
+    const breachTxnId = `TXN-${Date.now()}-BREACH-${Math.random().toString(36).substring(7)}`;
+
+    if (projectedTotal > 25000) {
+      const rejectedTxn: Transaction = {
+        id: breachTxnId,
+        recipientId: `CONTRACTOR_${Math.floor(Math.random() * 5000)}`,
+        routingAccount: `AC-REJECTED`,
+        baseRate: breachAmount,
+        verificationHash: `SHA256:REJECTED_${Math.random().toString(36).substring(2, 15)}`,
+        status: 'LIQUIDITY_CEILING_BREACH',
+        timestamp: new Date().toISOString().split('T')[1].slice(0, 12),
+      };
+
+      setTransactions((prev) => [rejectedTxn, ...prev].slice(0, 50));
+      setPendingQueueExceptions((prev) => prev + 1);
+
+      appendLog(
+        'ERROR',
+        'LIQUIDITY_CEILING_BREACH_DENIED',
+        `TXN ${breachTxnId} REJECTED: payload $${breachAmount} exceeds ceiling. Current: $${distributedCycleFunds}, Requested Total: $${projectedTotal}, Hard Cap: $25000. Authorization denied.`
+      );
+      setGatewayAvailability((prev) => Math.max(70, prev - 12));
+
+      setTimeout(() => {
+        setGatewayAvailability((prev) => Math.min(100, prev + 4));
+        setIsProcessing(false);
+      }, 1800);
+    }
+  };
+
+  const triggerManualInterceptPayload = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    const interceptTxnId = `TXN-${Date.now()}-INTERCEPT-${Math.random().toString(36).substring(7)}`;
+
+    appendLog('INFO', 'MANUAL_INTERCEPT_TRIGGER', `Testing manual intercept payload: ${interceptTxnId}`);
+
+    if (executionMode === 'MANUAL_INTERCEPT_GATE') {
+      const frozenTxn: Transaction = {
+        id: interceptTxnId,
+        recipientId: `CONTRACTOR_PENDING`,
+        routingAccount: `AC-FROZEN`,
+        baseRate: 1250,
+        verificationHash: `SHA256:PENDING_REVIEW_${Math.random().toString(36).substring(2, 15)}`,
+        status: 'PENDING_EXCEPTION',
+        timestamp: new Date().toISOString().split('T')[1].slice(0, 12),
+      };
+
+      setTransactions((prev) => [frozenTxn, ...prev].slice(0, 50));
+      setPendingQueueExceptions((prev) => prev + 1);
+
+      appendLog('WARN', 'MANUAL_GATE_FROZEN_STATE', `Payload ${interceptTxnId} frozen pending manual operator review. Requires override authorization.`);
+    } else {
+      appendLog('INFO', 'AUTOPILOT_BYPASS', 'Manual intercept requested, but AUTOPILOT_SETTLEMENT active. No freeze applied.');
+    }
+
+    setTimeout(() => {
+      setIsProcessing(false);
+    }, 800);
+  };
+
+  const compileAuditLedger = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
+    appendLog('INFO', 'AUDIT_COMPILATION_ENGINE', 'Compiling consolidated audit ledger...');
+
+    const csvContent = [
+      'Transaction ID,Recipient ID,Routing Account,Base Rate (USD),Verification Hash,Status,Timestamp',
+      ...transactions.map(
+        (t) =>
+          `${t.id},${t.recipientId},${t.routingAccount},${t.baseRate},${t.verificationHash},${t.status},${t.timestamp}`
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audit-ledger-${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    appendLog('SUCCESS', 'AUDIT_LEDGER_EXPORT', `Consolidated ledger exported. Records: ${transactions.length}. All reconciliation validation passed.`);
+
+    setTimeout(() => {
+      setIsProcessing(false);
+    }, 1000);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STYLE DEFINITIONS (INLINE ONLY)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const COLORS = {
+    bgPrimary: '#030712',
+    bgSecondary: '#0f172a',
+    bgTertiary: '#1a202c',
+    border: '#1e293b',
+    textPrimary: '#e2e8f0',
+    textSecondary: '#94a3b8',
+    accentEmerald: '#10b981',
+    accentAmber: '#f59e0b',
+    accentCrimson: '#ef4444',
+    accentBlue: '#3b82f6',
+  };
+
+  const containerStyle: React.CSSProperties = {
+    minHeight: '100vh',
+    backgroundColor: COLORS.bgPrimary,
+    color: COLORS.textPrimary,
+    fontFamily: "system-ui, -apple-system, sans-serif",
+    fontSize: '14px',
+    lineHeight: '1.6',
+    padding: '24px',
+  };
+
+  const headerStyle: React.CSSProperties = {
+    marginBottom: '32px',
+    borderBottom: `1px solid ${COLORS.border}`,
+    paddingBottom: '24px',
+  };
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: '28px',
+    fontWeight: 700,
+    letterSpacing: '-0.5px',
+    marginBottom: '8px',
+  };
+
+  const subtitleStyle: React.CSSProperties = {
+    fontSize: '13px',
+    color: COLORS.textSecondary,
+    fontWeight: 400,
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+  };
+
+  const controlBarStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gap: '12px',
+    marginBottom: '32px',
+  };
+
+  const selectStyle: React.CSSProperties = {
+    backgroundColor: COLORS.bgSecondary,
+    border: `1px solid ${COLORS.border}`,
+    color: COLORS.textPrimary,
+    padding: '10px 12px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+  };
+
+  const metricsGridStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '16px',
+    marginBottom: '32px',
+  };
+
+  const metricCardStyle: React.CSSProperties = {
+    backgroundColor: COLORS.bgSecondary,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '4px',
+    padding: '16px',
+  };
+
+  const metricLabelStyle: React.CSSProperties = {
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
+    marginBottom: '8px',
+  };
+
+  const metricValueStyle: React.CSSProperties = {
+    fontSize: '24px',
+    fontWeight: 700,
+    marginBottom: '8px',
+  };
+
+  const progressBarStyle: React.CSSProperties = {
+    height: '2px',
+    backgroundColor: COLORS.bgTertiary,
+    borderRadius: '1px',
+    overflow: 'hidden',
+  };
+
+  const progressFillStyle = (percentage: number): React.CSSProperties => ({
+    height: '100%',
+    backgroundColor: percentage < 70 ? COLORS.accentEmerald : percentage < 90 ? COLORS.accentAmber : COLORS.accentCrimson,
+    width: `${Math.min(percentage, 100)}%`,
+    transition: 'width 0.3s ease-out',
+  });
+
+  const modeToggleContainerStyle: React.CSSProperties = {
+    backgroundColor: COLORS.bgSecondary,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '4px',
+    padding: '16px',
+    marginBottom: '32px',
+  };
+
+  const modeToggleLabelStyle: React.CSSProperties = {
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
+    marginBottom: '12px',
+    display: 'block',
+  };
+
+  const modeButtonGroupStyle: React.CSSProperties = {
+    display: 'flex',
+    gap: '8px',
+  };
+
+  const modeButtonStyle = (isActive: boolean): React.CSSProperties => ({
+    flex: 1,
+    padding: '10px 12px',
+    backgroundColor: isActive ? COLORS.bgTertiary : COLORS.bgSecondary,
+    border: `1px solid ${isActive ? COLORS.accentBlue : COLORS.border}`,
+    borderRadius: '4px',
+    color: isActive ? COLORS.accentBlue : COLORS.textSecondary,
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: permissions.canToggleMode ? 'pointer' : 'not-allowed',
+    opacity: permissions.canToggleMode ? 1 : 0.5,
+    transition: 'all 0.2s',
+  });
+
+  const actionButtonStyle = (isActive: boolean = true): React.CSSProperties => ({
+    flex: '1 1 auto',
+    padding: '10px 14px',
+    backgroundColor: isActive ? COLORS.bgTertiary : COLORS.bgSecondary,
+    border: `1px solid ${isActive ? COLORS.border : COLORS.border}`,
+    borderRadius: '4px',
+    color: isActive ? COLORS.textPrimary : COLORS.textSecondary,
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: isActive ? 'pointer' : 'not-allowed',
+    opacity: isActive ? 1 : 0.4,
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+  });
+
+  const actionGridStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '12px',
+    marginBottom: '32px',
+  };
+
+  const terminalStyle: React.CSSProperties = {
+    backgroundColor: COLORS.bgTertiary,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '4px',
+    padding: '16px',
+    marginBottom: '32px',
+    fontFamily: '"Courier New", monospace',
+    fontSize: '11px',
+    height: '300px',
+    overflowY: 'auto',
+    scrollBehavior: 'smooth',
+  };
+
+  const terminalLineStyle = (level: string): React.CSSProperties => {
+    let color = COLORS.textSecondary;
+    if (level === 'SUCCESS') color = COLORS.accentEmerald;
+    if (level === 'ERROR') color = COLORS.accentCrimson;
+    if (level === 'WARN') color = COLORS.accentAmber;
+    if (level === 'INFO') color = COLORS.accentBlue;
+
+    return {
+      color,
+      marginBottom: '4px',
+      lineHeight: '1.5',
+      wordBreak: 'break-word',
+    };
+  };
+
+  const ledgerTableStyle: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    marginBottom: '32px',
+  };
+
+  const ledgerHeaderStyle: React.CSSProperties = {
+    backgroundColor: COLORS.bgSecondary,
+    borderBottom: `1px solid ${COLORS.border}`,
+    fontWeight: 600,
+    fontSize: '11px',
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
+    padding: '10px 12px',
+    textAlign: 'left',
+  };
+
+  const ledgerRowStyle: React.CSSProperties = {
+    borderBottom: `1px solid ${COLORS.border}`,
+    fontSize: '12px',
+  };
+
+  const ledgerCellStyle: React.CSSProperties = {
+    padding: '10px 12px',
+    borderRight: `1px solid ${COLORS.border}`,
+  };
+
+  const statusBadgeStyle = (status: TransactionStatus): React.CSSProperties => {
+    let backgroundColor = COLORS.bgSecondary;
+    let color = COLORS.textSecondary;
+
+    if (status === 'CLEARED') {
+      backgroundColor = `${COLORS.accentEmerald}22`;
+      color = COLORS.accentEmerald;
+    } else if (status === 'PENDING_EXCEPTION') {
+      backgroundColor = `${COLORS.accentAmber}22`;
+      color = COLORS.accentAmber;
+    } else if (status === 'SECURITY_BLOCK' || status === 'IDEMPOTENCY_FAILED' || status === 'LIQUIDITY_CEILING_BREACH') {
+      backgroundColor = `${COLORS.accentCrimson}22`;
+      color = COLORS.accentCrimson;
+    }
+
+    return {
+      display: 'inline-block',
+      backgroundColor,
+      color,
+      padding: '4px 8px',
+      borderRadius: '2px',
+      fontSize: '10px',
+      fontWeight: 600,
+      letterSpacing: '0.3px',
+    };
+  };
+
+  const roleChipStyle: React.CSSProperties = {
+    display: 'inline-block',
+    backgroundColor: `${COLORS.accentBlue}22`,
+    color: COLORS.accentBlue,
+    padding: '4px 10px',
+    borderRadius: '3px',
+    fontSize: '11px',
+    fontWeight: 600,
+    marginLeft: '12px',
+  };
+
+  const executionModeStyle: React.CSSProperties = {
+    display: 'inline-block',
+    padding: '4px 10px',
+    borderRadius: '3px',
+    fontSize: '11px',
+    fontWeight: 600,
+    marginLeft: '12px',
+    backgroundColor: executionMode === 'AUTOPILOT_SETTLEMENT' ? `${COLORS.accentEmerald}22` : `${COLORS.accentAmber}22`,
+    color: executionMode === 'AUTOPILOT_SETTLEMENT' ? COLORS.accentEmerald : COLORS.accentAmber,
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const cycleThresholdPercentage = (distributedCycleFunds / 25000) * 100;
+  const gatewayStatusColor = gatewayAvailability >= 95 ? COLORS.accentEmerald : gatewayAvailability >= 80 ? COLORS.accentAmber : COLORS.accentCrimson;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-mono selection:bg-emerald-500 selection:text-slate-950">
-      
+    <div style={containerStyle}>
+      {/* ──────────────────────────────────────────────────────────────────── */}
       {/* HEADER SECTION */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-slate-800 pb-6 mb-8 gap-4">
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={headerStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Shield size={20} color={COLORS.accentBlue} />
+            <div style={titleStyle}>Corporate Payment Routing Matrix</div>
+          </div>
+          <div style={executionModeStyle}>{executionMode}</div>
+        </div>
+        <div style={subtitleStyle}>IR Transcripts FinOps Infrastructure • Enterprise Settlement & Audit Ledger</div>
+        <div style={{ marginTop: '12px', fontSize: '12px', color: COLORS.textSecondary }}>
+          Active User:
+          <span style={roleChipStyle}>{userRole}</span>
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* ROLE & MODE CONTROL PANEL */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={controlBarStyle}>
         <div>
-          <div className="flex items-center gap-2 text-white">
-            <Radio className="text-emerald-400 animate-pulse shrink-0" size={24} />
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight uppercase">IR Transcripts // FinOps Guardrail Cockpit</h1>
-          </div>
-          <p className="text-slate-400 text-xs mt-1 font-sans">Core transaction processing infrastructure engine v1.4.2 // Monitoring active.</p>
-        </div>
-
-        {/* FLIGHT CONTROL STATE TOGGLES */}
-        <div className="flex bg-slate-900 border border-slate-800 p-1 rounded-xl w-full xl:w-auto">
-          <button 
-            onClick={() => { setSystemMode('AUTOPILOT'); addLog('COCKPIT PARAMETER CONFIGURATION RE-WRITTEN: Switching engine state to full AUTOPILOT.'); }}
-            className={`flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold uppercase rounded-lg transition-all ${systemMode === 'AUTOPILOT' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+          <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: COLORS.textSecondary, display: 'block', marginBottom: '6px' }}>
+            System Role
+          </label>
+          <select
+            value={userRole}
+            onChange={(e) => setUserRole(e.target.value as UserRole)}
+            style={selectStyle}
           >
-            <Play size={14} className="fill-current" /> Autopilot
-          </button>
-          <button 
-            onClick={() => { setSystemMode('MANUAL_MODE'); addLog('COCKPIT PARAMETER CONFIGURATION RE-WRITTEN: Restricting engine execution to MANUAL_MODE.'); }}
-            className={`flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold uppercase rounded-lg transition-all ${systemMode === 'MANUAL_MODE' ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-200'}`}
-          >
-            <AlertTriangle size={14} /> Manual Mode
-          </button>
+            {['Operations Director', 'Chief Financial Officer (CFO)', 'FinOps Lead', 'Global HR Administrator'].map((role) => (
+              <option key={role} value={role} style={{ backgroundColor: COLORS.bgSecondary, color: COLORS.textPrimary }}>
+                {role}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* METRICS METERS ROW */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><Layers size={12}/> Boundary Control State</p>
-          <div className="text-sm font-bold mt-3">
-            {systemMode === 'AUTOPILOT' ? (
-              <span className="text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 px-2.5 py-1 rounded-md flex items-center w-fit gap-1.5"><CheckCircle size={14}/> RUNNING_ON_AUTOPILOT</span>
-            ) : (
-              <span className="text-amber-400 bg-amber-950/40 border border-amber-900/50 px-2.5 py-1 rounded-md flex items-center w-fit gap-1.5"><ShieldAlert size={14}/> RESTRICTED_BY_OPERATORS</span>
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* EXECUTION MODE TOGGLE */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={modeToggleContainerStyle}>
+        <label style={modeToggleLabelStyle}>Execution Mode</label>
+        <div style={modeButtonGroupStyle}>
+          <button
+            style={modeButtonStyle(executionMode === 'AUTOPILOT_SETTLEMENT')}
+            onClick={() => permissions.canToggleMode && setExecutionMode('AUTOPILOT_SETTLEMENT')}
+            disabled={!permissions.canToggleMode}
+          >
+            <Zap size={14} />
+            Autopilot Settlement
+          </button>
+          <button
+            style={modeButtonStyle(executionMode === 'MANUAL_INTERCEPT_GATE')}
+            onClick={() => permissions.canToggleMode && setExecutionMode('MANUAL_INTERCEPT_GATE')}
+            disabled={!permissions.canToggleMode}
+          >
+            <Lock size={14} />
+            Manual Intercept Gate
+          </button>
+        </div>
+        <div style={{ marginTop: '10px', fontSize: '11px', color: COLORS.textSecondary }}>
+          {executionMode === 'AUTOPILOT_SETTLEMENT'
+            ? 'Automated settlement execution enabled. Transactions clear immediately upon validation.'
+            : 'Manual review mode active. All payloads frozen pending operator authorization.'}
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* MULTI-STAGE FINANCIAL METRICS */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={metricsGridStyle}>
+        <div style={metricCardStyle}>
+          <div style={metricLabelStyle}>
+            <DollarSign size={12} style={{ marginRight: '4px', display: 'inline-block' }} />
+            Distributed Cycle Funds
+          </div>
+          <div style={metricValueStyle}>${distributedCycleFunds.toLocaleString()}</div>
+          <div style={{ fontSize: '11px', color: COLORS.textSecondary, marginBottom: '8px' }}>
+            of $25,000 hard cap
+          </div>
+          <div style={progressBarStyle}>
+            <div style={progressFillStyle(cycleThresholdPercentage)} />
+          </div>
+        </div>
+
+        <div style={metricCardStyle}>
+          <div style={metricLabelStyle}>
+            <CheckCircle2 size={12} style={{ marginRight: '4px', display: 'inline-block' }} />
+            Settled Ledger Entries
+          </div>
+          <div style={metricValueStyle}>{settledLedgerEntries}</div>
+          <div style={{ fontSize: '11px', color: COLORS.textSecondary }}>transactions cleared</div>
+        </div>
+
+        <div style={metricCardStyle}>
+          <div style={metricLabelStyle}>
+            <AlertCircle size={12} style={{ marginRight: '4px', display: 'inline-block' }} />
+            Pending Queue Exceptions
+          </div>
+          <div style={metricValueStyle} style={{ color: pendingQueueExceptions > 0 ? COLORS.accentAmber : COLORS.textPrimary }}>
+            {pendingQueueExceptions}
+          </div>
+          <div style={{ fontSize: '11px', color: COLORS.textSecondary }}>requiring attention</div>
+        </div>
+
+        <div style={metricCardStyle}>
+          <div style={metricLabelStyle}>
+            <Cpu size={12} style={{ marginRight: '4px', display: 'inline-block' }} />
+            Gateway Availability
+          </div>
+          <div style={{ ...metricValueStyle, color: gatewayStatusColor }}>{gatewayAvailability}%</div>
+          <div style={{ fontSize: '11px', color: COLORS.textSecondary }}>system operational</div>
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* PAYMENT ENGINE ACTION MATRIX */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={actionGridStyle}>
+        <button
+          style={actionButtonStyle(true)}
+          onClick={ingestCorporateSettlement}
+          disabled={isProcessing}
+        >
+          <TrendingUp size={14} />
+          Ingest Corporate Settlement
+        </button>
+        <button
+          style={actionButtonStyle(true)}
+          onClick={injectTokenDuplication}
+          disabled={isProcessing}
+        >
+          <AlertCircle size={14} />
+          Inject Token Duplication Conflict
+        </button>
+        <button
+          style={actionButtonStyle(true)}
+          onClick={deployCapitalThresholdBreach}
+          disabled={isProcessing}
+        >
+          <BarChart3 size={14} />
+          Deploy Capital Threshold Over-Breach
+        </button>
+        <button
+          style={actionButtonStyle(true)}
+          onClick={triggerManualInterceptPayload}
+          disabled={isProcessing}
+        >
+          <Lock size={14} />
+          Trigger Manual Intercept Payload
+        </button>
+        <button
+          style={actionButtonStyle(permissions.canExport)}
+          onClick={compileAuditLedger}
+          disabled={isProcessing || !permissions.canExport}
+        >
+          <FileSpreadsheet size={14} />
+          Compile Audit Ledger CSV
+        </button>
+      </div>
+
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* REAL-TIME TELEMETRY STREAM TERMINAL */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', color: COLORS.textSecondary, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Terminal size={12} />
+          Real-Time Telemetry Stream
+        </div>
+      </div>
+
+      <div style={terminalStyle}>
+        {logs.length === 0 && (
+          <div style={{ color: COLORS.textSecondary, fontSize: '11px' }}>
+            • Awaiting transactional events. System ready for payload injection.
+          </div>
+        )}
+        {logs.map((log, idx) => (
+          <div key={idx} style={terminalLineStyle(log.level)}>
+            <span style={{ color: COLORS.textSecondary }}>
+              [{log.timestamp}]
+            </span>{' '}
+            <span style={{ color: COLORS.textSecondary }}>{log.component}</span> — {log.message}
+          </div>
+        ))}
+        <div ref={terminalEndRef} />
+      </div>
+
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* RECONCILIATION & AUDIT DATA MATRIX */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
+
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', color: COLORS.textSecondary, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Database size={12} />
+          Batch Settlement Reconciliation Ledger
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto', marginBottom: '32px' }}>
+        <table style={ledgerTableStyle}>
+          <thead>
+            <tr>
+              <th style={ledgerHeaderStyle}>Transaction ID</th>
+              <th style={ledgerHeaderStyle}>Recipient ID</th>
+              <th style={ledgerHeaderStyle}>Routing Account</th>
+              <th style={ledgerHeaderStyle}>Base Rate (USD)</th>
+              <th style={ledgerHeaderStyle}>Verification Hash</th>
+              <th style={ledgerHeaderStyle}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ ...ledgerCellStyle, textAlign: 'center', color: COLORS.textSecondary }}>
+                  No transactions yet. Await payload injection.
+                </td>
+              </tr>
             )}
-          </div>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><DollarSign size={12}/> Dispatched Batch Capital</p>
-          <div className="text-2xl font-black text-white mt-2">
-            ${totalSpent.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500 font-sans">/ $2,500 Max Cap</span>
-          </div>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><CheckCircle size={12}/> Settled Transactions Ledger</p>
-          <div className="text-2xl font-black text-white mt-2">
-            0{invoiceCount} <span className="text-[10px] font-normal text-slate-500 font-sans">records compiled</span>
-          </div>
-        </div>
+            {transactions.map((txn) => (
+              <tr key={txn.id} style={ledgerRowStyle}>
+                <td style={ledgerCellStyle}>
+                  <span style={{ fontFamily: '"Courier New", monospace', fontSize: '11px' }}>{txn.id}</span>
+                </td>
+                <td style={ledgerCellStyle}>{txn.recipientId}</td>
+                <td style={ledgerCellStyle}>{txn.routingAccount}</td>
+                <td style={ledgerCellStyle}>${txn.baseRate.toLocaleString()}</td>
+                <td style={{ ...ledgerCellStyle, fontFamily: '"Courier New", monospace', fontSize: '10px', color: COLORS.textSecondary }}>
+                  {txn.verificationHash}
+                </td>
+                <td style={ledgerCellStyle}>
+                  <span style={statusBadgeStyle(txn.status)}>{txn.status}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* SANDBOX CONTROLS & LOGGER SECTION */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* RUNTIME PAYLOAD TRIGGERS */}
-        <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6">
-          <h2 className="text-xs font-bold uppercase text-slate-300 tracking-wider mb-4 pb-2 border-b border-slate-800">Sandbox Pipeline Inputs</h2>
-          <div className="space-y-3.5">
-            <button 
-              onClick={() => processInvoice(`INV-2026-00${Math.floor(Math.random() * 900) + 100}`, 'Alex Analyst', 'alex@irtranscripts.com', 450)}
-              className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left p-3.5 rounded-xl transition text-xs flex flex-col gap-1 group"
-            >
-              <div className="flex justify-between w-full font-bold group-hover:text-emerald-400">
-                <span>⚡ Fire Standard Request</span>
-                <span>+$450.00</span>
-              </div>
-              <span className="text-[10px] text-slate-500">Target: Alex Analyst (alex@irtranscripts.com)</span>
-            </button>
+      {/* ──────────────────────────────────────────────────────────────────── */}
+      {/* FOOTER METADATA */}
+      {/* ──────────────────────────────────────────────────────────────────── */}
 
-            <button 
-              onClick={() => processInvoice('INV-2026-001', 'Alex Analyst', 'alex@irtranscripts.com', 450)}
-              className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left p-3.5 rounded-xl transition text-xs flex flex-col gap-1 group"
-            >
-              <div className="flex justify-between w-full font-bold group-hover:text-rose-400">
-                <span>💥 Trigger Idempotency Breaker</span>
-                <span className="text-slate-500">Duplicate Token</span>
-              </div>
-              <span className="text-[10px] text-slate-500">Forces duplicate hit parameter using processed hash 'INV-2026-001'</span>
-            </button>
-
-            <button 
-              onClick={() => processInvoice(`INV-2026-ERR`, 'Grace Agent', 'grace@irtranscripts.com', 3000)}
-              className="w-full bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/50 text-left p-3.5 rounded-xl transition text-xs flex flex-col gap-1 group"
-            >
-              <div className="flex justify-between w-full font-bold text-rose-300">
-                <span>🛑 Trigger Budget Break Payload</span>
-                <span>+$3,000.00</span>
-              </div>
-              <span className="text-[10px] text-rose-500/70">Injects an override execution sum breaching cap pools.</span>
-            </button>
-
-            <button 
-              onClick={() => addLog('COMPILATION SUCCESS: Export worker complete. Stored local ledger bundle to stream format: ./master_invoices.csv')}
-              className="w-full mt-6 bg-slate-100 hover:bg-white text-slate-950 font-black text-xs uppercase py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg"
-            >
-              <FileSpreadsheet size={14} /> Export Consolidated Audit CSV
-            </button>
-          </div>
+      <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: '16px', fontSize: '11px', color: COLORS.textSecondary }}>
+        <div style={{ marginBottom: '8px' }}>
+          <strong>System Status:</strong> All infrastructure layers operational. Contractor network capacity: ~5,000 active participants.
         </div>
-
-        {/* LOG STREAM DISPLAY */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col h-[460px]">
-          <h2 className="text-xs font-bold uppercase text-slate-300 tracking-wider mb-4 pb-2 border-b border-slate-800">System Telemetry Stream Terminal</h2>
-          <div className="flex-1 bg-slate-950 border border-slate-800/80 rounded-xl p-4 text-[11px] overflow-y-auto space-y-3 shadow-inner font-mono leading-relaxed">
-            {logs.map((log, index) => {
-              let textStyle = 'text-slate-400 border-slate-800';
-              if (log.includes('SUCCESS')) textStyle = 'text-emerald-400 border-emerald-900/50 bg-emerald-950/10 font-bold';
-              if (log.includes('CRITICAL')) textStyle = 'text-rose-400 border-rose-900/50 bg-rose-950/20 font-bold';
-              if (log.includes('INTERCEPT')) textStyle = 'text-amber-400 border-amber-900/50 bg-amber-950/10 font-bold';
-              return (
-                <div key={index} className={`border-l-2 pl-3 py-1 ${textStyle}`}>
-                  {log}
-                </div>
-              );
-            })}
-          </div>
+        <div style={{ marginBottom: '8px' }}>
+          <strong>Authorization Context:</strong> {userRole} — {permissions.canToggleMode ? 'Mode Toggle Enabled' : 'Mode Toggle Disabled'} | {permissions.canInjectPayloads ? 'Payload Injection Enabled' : 'Payload Injection Disabled'} | {permissions.canExport ? 'Export Enabled' : 'Export Disabled'}
+        </div>
+        <div>
+          <strong>Last Updated:</strong> {new Date().toISOString()}
         </div>
       </div>
     </div>
