@@ -381,7 +381,6 @@ const demoApprovalQueue: ApprovalItem[] = [
     readyToPay: false,
   },
 ];
-
 // ============================================================================
 // COMPONENT: KPI CARD
 // ============================================================================
@@ -399,6 +398,10 @@ const KPICard: React.FC<{ metric: KPIMetric }> = ({ metric }) => {
             {metric.unit && <span className="text-sm text-slate-500"> {metric.unit}</span>}
           </p>
         </div>
+      </div>
+    </div>
+  );
+};
         <div className="text-slate-400">{metric.icon}</div>
       </div>
       <div className="flex items-center gap-2">
